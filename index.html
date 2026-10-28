@@ -213,6 +213,10 @@ input{font:inherit;color:inherit}
 .ab{width:100%;text-align:left;color:var(--acc)}
 .ab.r{color:var(--neg)}
 .shake{animation:shake .4s}
+.ck{width:100%;text-align:left;color:var(--tx)}
+.ck svg{color:var(--acc);opacity:0;transform:scale(.4);transition:opacity .2s,transform .3s var(--spring)}
+.ck.on svg{opacity:1;transform:none}
+.bpri.busy{opacity:.6;pointer-events:none}
 
 /* action sheet */
 .as{position:absolute;left:8px;right:8px;bottom:calc(var(--sab) + 8px);z-index:21;transform:translateY(120%);transition:transform .4s var(--ease)}
@@ -325,11 +329,26 @@ input{font:inherit;color:inherit}
     <div class="grp"><div class="cell"><span>Modo escuro</span><label class="sw"><input type="checkbox" id="cDk"><i></i></label></div></div>
     <div class="gl">Dados</div>
     <div class="grp">
-      <div class="cell"><button class="ab" id="cExp">Exportar backup</button></div>
-      <div class="cell"><button class="ab" id="cImp">Importar backup</button></div>
+      <div class="cell"><button class="ab" id="cExp">Exportar PDF</button></div>
       <div class="cell"><button class="ab r" id="cRst">Apagar todos os dados</button></div>
     </div>
-    <input type="file" id="file" accept="application/json,.json" hidden>
+  </div>
+</div>
+
+<div class="sheet" id="sPdf" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <div class="shd"><button class="tb" data-x>Cancelar</button><h3>Exportar PDF</h3><span class="tb"></span></div>
+  <div class="sbd">
+    <div class="gl">Pessoas</div>
+    <div class="grp" id="xPeople"></div>
+    <div class="gf"><span>Nenhuma selecionada = todas</span></div>
+    <div class="gl">Período</div>
+    <div class="grp">
+      <label class="cell"><span>De</span><input type="date" id="xFrom"></label>
+      <label class="cell"><span>Até</span><input type="date" id="xTo"></label>
+    </div>
+    <div class="gf"><span>Em branco = todo o período</span><button class="tb b" id="xClr" style="font-size:13px;padding:0;min-width:0" hidden>Limpar</button></div>
+    <button class="bpri" id="xGo" style="margin-top:24px">Gerar PDF</button>
   </div>
 </div>
 
@@ -663,16 +682,94 @@ $('#cOk').onclick=()=>{
   S.people=tmp.map(p=>({id:p.id,name:p.name.trim(),sal:p.sal}));save();
   closeSheet($('#sCfg'));render();
 };
-$('#cExp').onclick=async()=>{
-  const name='gastos-'+iso(new Date())+'.json',file=new File([JSON.stringify(S)],name,{type:'application/json'});
-  if(navigator.canShare?.({files:[file]})){try{await navigator.share({files:[file]})}catch{}return}
-  const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+let pdfLib=null;
+function loadPdf(){
+  const ld=src=>new Promise((ok,no)=>{const e=document.createElement('script');e.src=src;e.onload=ok;e.onerror=()=>{pdfLib=null;no()};document.head.appendChild(e)});
+  return pdfLib||(pdfLib=ld('jspdf.min.js').then(()=>ld('autotable.min.js')));
+}
+let xSel=new Set(),xFile=null;
+$('#cExp').onclick=()=>{
+  loadPdf().catch(()=>{});
+  xSel=new Set();xFile=null;$('#xGo').textContent='Gerar PDF';
+  $('#xPeople').innerHTML=S.people.map(p=>`<button class="cell ck" data-p="${p.id}"><span>${esc(p.name)}</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></button>`).join('');
+  $('#xFrom').value=$('#xTo').value='';$('#xClr').hidden=true;
+  closeSheet($('#sCfg'));setTimeout(()=>openSheet($('#sPdf')),200);
 };
-$('#cImp').onclick=()=>$('#file').click();
-$('#file').onchange=async e=>{
-  const f=e.target.files[0];e.target.value='';if(!f)return;
-  let d;try{d=JSON.parse(await f.text());if(!Array.isArray(d.people)||!Array.isArray(d.items)||!d.people.length)throw 0}catch{await ask('Arquivo inválido',[]);return}
-  if(await ask('Substituir os dados atuais?',[{t:'Substituir',v:1,r:1}])){S=d;save();theme();closeSheet($('#sCfg'));pcIds='';mKey='';render(0,true)}
+$('#xPeople').onclick=e=>{const b=e.target.closest('.ck');if(!b)return;const id=b.dataset.p;xSel.has(id)?xSel.delete(id):xSel.add(id);b.classList.toggle('on');xReset()};
+const xReset=()=>{xFile=null;$('#xGo').textContent='Gerar PDF';$('#xClr').hidden=!$('#xFrom').value&&!$('#xTo').value};
+$('#xFrom').onchange=$('#xTo').onchange=xReset;
+$('#xClr').onclick=()=>{$('#xFrom').value=$('#xTo').value='';xReset()};
+
+const dmy=d=>d.split('-').reverse().join('/');
+function report(from,to,P){
+  const dim=m=>new Date(Math.floor(m/12),m%12+1,0).getDate();
+  const last=it=>{const s=mi(it.dt);return it.fx?(it.end??Math.max(T0,s)):it.n>1?s+it.n-1:s};
+  if(!S.items.length)return null;
+  const lo=from?mi(from):Math.min(...S.items.map(i=>mi(i.dt))),hi=to?mi(to):Math.max(...S.items.map(last));
+  const months=[];
+  for(let m=lo;m<=hi;m++){
+    const rows=[];
+    S.items.forEach(it=>{
+      const l=lab(it,m);if(!l)return;
+      const day=Math.min(+it.dt.slice(8),dim(m)),dt=Math.floor(m/12)+'-'+String(m%12+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+      if(from&&dt<from||to&&dt>to)return;
+      const v=P.map(p=>it.v[p.id]||0);if(!v.some(x=>x))return;
+      rows.push({dt,d:it.d,cat:l.cat,tag:l.cat==='fx'?'Fixa':l.cat==='pa'?'Parcela '+l.tag:'Avulsa',v});
+    });
+    rows.sort((a,b)=>a.dt<b.dt?-1:1);
+    if(rows.length)months.push({m,rows});
+  }
+  return months.length?{months,n:hi-lo+1}:null;
+}
+function buildPdf(from,to,P){
+  const R=report(from,to,P);if(!R)return null;
+  const {jsPDF}=window.jspdf,doc=new jsPDF({unit:'pt',format:'a4'}),W=doc.internal.pageSize.getWidth(),X=40;
+  const multi=P.length>1,head=[...P.map(p=>p.name),...(multi?['Total']:[])],cols=v=>[...v.map(fm),...(multi?[fm(v.reduce((a,b)=>a+b,0))]:[])];
+  doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(28,28,30);doc.text('Relatório de despesas',X,56);
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(108,108,112);
+  doc.text('Período: '+(from||to?(from?dmy(from):'início')+' a '+(to?dmy(to):'fim'):'todo o período'),X,76);
+  doc.text('Pessoas: '+P.map(p=>p.name).join(', '),X,90);
+  doc.text('Gerado em '+dmy(iso(new Date())),W-X,56,{align:'right'});
+  const T={fx:P.map(()=>0),pa:P.map(()=>0),av:P.map(()=>0)};
+  R.months.forEach(g=>g.rows.forEach(r=>r.v.forEach((x,i)=>T[r.cat][i]+=x)));
+  const tot=P.map((_,i)=>T.fx[i]+T.pa[i]+T.av[i]),ren=P.map(p=>p.sal*R.n),sob=P.map((_,i)=>ren[i]-tot[i]);
+  const st={theme:'plain',margin:{left:X,right:X},styles:{font:'helvetica',fontSize:9,cellPadding:{top:5,bottom:5,left:6,right:6},textColor:[28,28,30],lineColor:[229,229,234],lineWidth:{bottom:.5}},headStyles:{fillColor:[242,242,247],textColor:[108,108,112],fontStyle:'bold'},footStyles:{fillColor:[242,242,247],fontStyle:'bold'}};
+  const right=n=>Object.fromEntries([...Array(n)].map((_,i)=>[i,{halign:'right'}]));
+  doc.autoTable({...st,startY:110,head:[['Resumo',...head]],body:[['Fixas',...cols(T.fx)],['Parceladas',...cols(T.pa)],['Avulsas',...cols(T.av)],[{content:'Total',styles:{fontStyle:'bold'}},...cols(tot).map(c=>({content:c,styles:{fontStyle:'bold'}}))],['Renda no período ('+R.n+(R.n>1?' meses':' mês')+')',...cols(ren)],[{content:'Sobra',styles:{fontStyle:'bold'}},...cols(sob).map(c=>({content:c,styles:{fontStyle:'bold',textColor:c.startsWith('-')?[215,0,21]:[28,28,30]}}))]],
+    columnStyles:{0:{cellWidth:170},...Object.fromEntries(head.map((_,i)=>[i+1,{halign:'right'}]))},didParseCell:d=>{if(d.section==='head'&&d.column.index>0)d.cell.styles.halign='right'}});
+  let y=doc.lastAutoTable.finalY+30;
+  R.months.forEach(g=>{
+    if(y>740){doc.addPage();y=50}
+    doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(28,28,30);doc.text(MES[g.m%12]+' '+Math.floor(g.m/12),X,y);
+    const s=P.map((_,i)=>g.rows.reduce((a,r)=>a+r.v[i],0));
+    doc.autoTable({...st,startY:y+8,head:[['Data','Descrição','Tipo',...head]],body:g.rows.map(r=>[dmy(r.dt).slice(0,5),r.d,r.tag,...cols(r.v).map((c,i)=>i<P.length&&!r.v[i]?'–':c)]),foot:[['','','Total do mês',...cols(s)]],
+      columnStyles:{0:{cellWidth:42},2:{cellWidth:78},...Object.fromEntries(head.map((_,i)=>[i+3,{halign:'right',cellWidth:70}]))},
+      didParseCell:d=>{if(d.section!=='body'&&d.column.index>2)d.cell.styles.halign='right'}});
+    y=doc.lastAutoTable.finalY+28;
+  });
+  const n=doc.getNumberOfPages();
+  for(let i=1;i<=n;i++){doc.setPage(i);doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(174,174,178);doc.text(i+' / '+n,W-X,820,{align:'right'})}
+  return new File([doc.output('blob')],'despesas-'+iso(new Date())+'.pdf',{type:'application/pdf'});
+}
+async function sharePdf(f){
+  if(navigator.canShare?.({files:[f]})){
+    try{await navigator.share({files:[f]});closeSheet($('#sPdf'))}
+    catch(e){if(e.name==='NotAllowedError'){xFile=f;$('#xGo').textContent='Compartilhar PDF'}}
+    return;
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  closeSheet($('#sPdf'));
+}
+$('#xGo').onclick=async()=>{
+  if(xFile)return sharePdf(xFile);
+  let from=$('#xFrom').value,to=$('#xTo').value;
+  if(from&&to&&from>to)[from,to]=[to,from];
+  const P=xSel.size?S.people.filter(p=>xSel.has(p.id)):S.people;
+  const b=$('#xGo');
+  if(!window.jspdf?.jsPDF?.API?.autoTable){b.classList.add('busy');try{await loadPdf()}catch{b.classList.remove('busy');await ask('Não foi possível carregar o gerador de PDF',[]);return}b.classList.remove('busy')}
+  const f=buildPdf(from,to,P);
+  if(!f){await ask('Nenhuma despesa encontrada para o filtro',[]);return}
+  sharePdf(f);
 };
 $('#cRst').onclick=async()=>{
   if(!await ask('Todos os dados serão apagados.',[{t:'Apagar tudo',v:1,r:1}]))return;
