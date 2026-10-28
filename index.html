@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Gastos">
+<meta name="theme-color" content="#f4f4f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#18181b" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css">
+<title>Gastos</title>
+</head>
+<body>
+<header>
+  <button id="prev" aria-label="Mês anterior">‹</button>
+  <h1 id="mes"></h1>
+  <button id="next" aria-label="Próximo mês">›</button>
+  <button id="cfg" aria-label="Ajustes">⚙</button>
+</header>
+<main>
+  <table id="tab">
+    <thead><tr><th>Descrição</th><th class="n1"></th><th class="n2"></th><th>Total</th><th>Parc.</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <button id="add" class="btn pri">+ Despesa</button>
+
+  <h2>Resumo</h2>
+  <table id="sum">
+    <thead><tr><th></th><th class="n1"></th><th class="n2"></th><th>Total</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <div id="graf"></div>
+</main>
+
+<dialog id="dlg">
+  <form id="f" method="dialog">
+    <label>Descrição<input name="d" required autocomplete="off"></label>
+    <div class="row">
+      <label><span class="n1"></span><input name="a" inputmode="decimal" placeholder="0,00"></label>
+      <label><span class="n2"></span><input name="b" inputmode="decimal" placeholder="0,00"></label>
+    </div>
+    <div class="row">
+      <label>Parcelas (0 = fixa)<input name="n" type="number" inputmode="numeric" min="0" value="0"></label>
+      <label id="lk">Parcela atual<input name="k" type="number" inputmode="numeric" min="1" value="1"></label>
+    </div>
+    <div class="acts">
+      <button type="button" id="del" class="btn danger">Excluir</button>
+      <span></span>
+      <button value="cancel" formnovalidate class="btn">Cancelar</button>
+      <button value="ok" class="btn pri">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dcfg">
+  <form method="dialog" id="fc">
+    <div class="row">
+      <label>Nome 1<input name="n1" autocomplete="off"></label>
+      <label>Nome 2<input name="n2" autocomplete="off"></label>
+    </div>
+    <div class="acts">
+      <button type="button" id="exp" class="btn">Exportar</button>
+      <button type="button" id="imp" class="btn">Importar</button>
+      <span></span>
+      <button value="ok" class="btn pri">OK</button>
+    </div>
+    <input type="file" id="file" accept="application/json,.json" hidden>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
